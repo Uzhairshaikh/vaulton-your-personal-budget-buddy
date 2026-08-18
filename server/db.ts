@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, like, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, gt, like, lt, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, lineItems, notifications, purchases, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -37,15 +37,25 @@ export async function getUserByOpenId(openId: string) {
   return rows[0];
 }
 
-export type PurchaseFilters = { search?: string; category?: string; sort?: "date_desc" | "date_asc" | "amount_desc" | "amount_asc" };
+export type PurchaseFilters = { search?: string; category?: string; tag?: string; warrantyStatus?: "all" | "active" | "expiring soon" | "expired"; minPrice?: number; maxPrice?: number; sort?: "date_desc" | "date_asc" | "amount_desc" | "amount_asc" | "warranty_asc" | "warranty_desc" };
 
 export async function listPurchases(userId: number, filters: PurchaseFilters = {}) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [eq(purchases.userId, userId)];
   if (filters.category && filters.category !== "all") conditions.push(eq(purchases.category, filters.category));
-  if (filters.search?.trim()) { const value = `%${filters.search.trim()}%`; conditions.push(or(like(purchases.merchantName, value), like(purchases.category, value))!); }
-  const orderBy = filters.sort === "date_asc" ? asc(purchases.purchaseDate) : filters.sort === "amount_desc" ? desc(purchases.totalAmount) : filters.sort === "amount_asc" ? asc(purchases.totalAmount) : desc(purchases.purchaseDate);
+  if (filters.tag && filters.tag !== "all") conditions.push(like(purchases.tags, `%${filters.tag}%`));
+  if (filters.search?.trim()) { const value = `%${filters.search.trim()}%`; conditions.push(or(like(purchases.merchantName, value), like(purchases.category, value), like(purchases.tags, value))!); }
+  if (filters.minPrice !== undefined) conditions.push(gte(purchases.totalAmount, Number(filters.minPrice).toFixed(2)));
+  if (filters.maxPrice !== undefined) conditions.push(lte(purchases.totalAmount, Number(filters.maxPrice).toFixed(2)));
+  if (filters.warrantyStatus && filters.warrantyStatus !== "all") {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 7 * 86_400_000);
+    if (filters.warrantyStatus === "expired") conditions.push(lt(purchases.warrantyExpiryDate, now));
+    if (filters.warrantyStatus === "expiring soon") conditions.push(and(gte(purchases.warrantyExpiryDate, now), lte(purchases.warrantyExpiryDate, soon))!);
+    if (filters.warrantyStatus === "active") conditions.push(gt(purchases.warrantyExpiryDate, soon));
+  }
+  const orderBy = filters.sort === "date_asc" ? asc(purchases.purchaseDate) : filters.sort === "amount_desc" ? desc(purchases.totalAmount) : filters.sort === "amount_asc" ? asc(purchases.totalAmount) : filters.sort === "warranty_asc" ? asc(purchases.warrantyExpiryDate) : filters.sort === "warranty_desc" ? desc(purchases.warrantyExpiryDate) : desc(purchases.purchaseDate);
   return db.select().from(purchases).where(and(...conditions)).orderBy(orderBy);
 }
 
@@ -119,7 +129,8 @@ export function normalizeLineItems(items: Array<{ itemName: string; quantity?: n
 export function groupByMonth(rows: Array<typeof purchases.$inferSelect>) { const map = new Map<string, number>(); rows.forEach(row => { const date = new Date(row.purchaseDate); const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`; map.set(key, (map.get(key) ?? 0) + toNumber(row.totalAmount)); }); return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([key, total]) => { const [year, month] = key.split("-").map(Number); return { key, label: new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", { month: "short" }), total: Number(total.toFixed(2)) }; }); }
 export function groupByCategory(rows: Array<typeof purchases.$inferSelect>) { const map = new Map<string, number>(); rows.forEach(row => map.set(row.category, (map.get(row.category) ?? 0) + toNumber(row.totalAmount))); return Array.from(map.entries()).sort(([, a], [, b]) => b - a).map(([name, total]) => ({ name, total: Number(total.toFixed(2)) })); }
 export function groupByMerchant(rows: Array<typeof purchases.$inferSelect>) { const map = new Map<string, number>(); rows.forEach(row => map.set(row.merchantName, (map.get(row.merchantName) ?? 0) + toNumber(row.totalAmount))); return Array.from(map.entries()).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, total]) => ({ name, total: Number(total.toFixed(2)) })); }
-export function getAnalytics(rows: Array<typeof purchases.$inferSelect>) { const totalSpend = rows.reduce((sum, row) => sum + toNumber(row.totalAmount), 0); const now = new Date(); const monthSpend = rows.filter(row => { const date = new Date(row.purchaseDate); return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth(); }).reduce((sum, row) => sum + toNumber(row.totalAmount), 0); return { totalSpend: Number(totalSpend.toFixed(2)), purchaseCount: rows.length, averagePurchase: rows.length ? Number((totalSpend / rows.length).toFixed(2)) : 0, monthSpend: Number(monthSpend.toFixed(2)), monthly: groupByMonth(rows), categories: groupByCategory(rows), merchants: groupByMerchant(rows) }; }
+export function groupByMonthAndTag(rows: Array<typeof purchases.$inferSelect>) { const map = new Map<string, { label: string; total: number; tags: Record<string, number> }>(); rows.forEach(row => { const date = new Date(row.purchaseDate); const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`; const entry = map.get(key) ?? { label: date.toLocaleDateString("en-IN", { month: "short" }), total: 0, tags: {} }; const amount = toNumber(row.totalAmount); const tags = (row.tags || "").split(",").map(tag => tag.trim()).filter(Boolean); const tagNames = tags.length ? tags : ["Untagged"]; const allocation = amount / tagNames.length; entry.total += amount; tagNames.forEach(tag => { entry.tags[tag] = Number(((entry.tags[tag] ?? 0) + allocation).toFixed(2)); }); map.set(key, entry); }); return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([key, value]) => ({ key, label: value.label, total: Number(value.total.toFixed(2)), tags: value.tags })); }
+export function getAnalytics(rows: Array<typeof purchases.$inferSelect>) { const totalSpend = rows.reduce((sum, row) => sum + toNumber(row.totalAmount), 0); const now = new Date(); const monthSpend = rows.filter(row => { const date = new Date(row.purchaseDate); return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth(); }).reduce((sum, row) => sum + toNumber(row.totalAmount), 0); return { totalSpend: Number(totalSpend.toFixed(2)), purchaseCount: rows.length, averagePurchase: rows.length ? Number((totalSpend / rows.length).toFixed(2)) : 0, monthSpend: Number(monthSpend.toFixed(2)), monthly: groupByMonth(rows), monthlyByTag: groupByMonthAndTag(rows), categories: groupByCategory(rows), merchants: groupByMerchant(rows) }; }
 export async function ensureDeadlineNotifications(userId: number, rows: Array<typeof purchases.$inferSelect>) { const db = await getDb(); if (!db) return; for (const purchase of rows) { for (const entry of [{ date: purchase.warrantyExpiryDate, prefix: "warranty" as const, label: "Warranty" }, { date: purchase.returnDeadlineDate, prefix: "return" as const, label: "Return window" }]) { if (!entry.date) continue; const days = utcCalendarDiff(entry.date); if (days !== 7 && days !== 1) continue; const type = `${entry.prefix}_${days}day` as "warranty_7day" | "warranty_1day" | "return_7day" | "return_1day"; const exists = await db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.purchaseId, purchase.id), eq(notifications.type, type))).limit(1); if (exists[0]) continue; await db.insert(notifications).values({ userId, purchaseId: purchase.id, type, title: `${entry.label} expires in ${days} day${days === 1 ? "" : "s"}`, message: `${purchase.merchantName} · ${entry.label.toLowerCase()} ends on ${entry.date.toLocaleDateString()}.`, isRead: 0, targetDate: entry.date }); } } }
 export function serializePurchase(purchase: typeof purchases.$inferSelect) { return { ...purchase, totalAmount: toNumber(purchase.totalAmount) }; }
 export function formatMoney(value: string | number | null | undefined, currency = "INR") { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(toNumber(value)); }

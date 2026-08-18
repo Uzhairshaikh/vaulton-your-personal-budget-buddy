@@ -24,3 +24,11 @@
 - [x] Rename branding from Receiptwise to VaultOn
 - [x] Switch global font family to Arial across the entire UI
 - [x] Update currency formatting from USD ($) to Indian Rupees (₹)
+- [x] Implement advanced purchase filtering and sorting by custom tags, warranty expiration date, and price
+- [x] Add monthly spending analytics chart grouped by custom tags in Indian Rupees (₹)
+- [x] Implement multi-file drag-and-drop receipt uploader with individual progress bars
+- [x] Verify the multi-file drag-and-drop upload modal visually with per-file progress rows in the live preview.
+- [x] Visually verify multiple queued and processing uploader rows with distinct progress bars in the live preview.
+- [x] Validate the uploader success and error row presentation before final checkpoint.
+- [x] Visually verify a queued uploader row alongside a processing row with distinct progress bars in the live preview.
+- [x] Keep explicit verification coverage for complete and error uploader rows.

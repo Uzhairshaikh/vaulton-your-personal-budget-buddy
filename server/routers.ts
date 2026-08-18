@@ -110,7 +110,7 @@ export const appRouter = router({
   }),
 
   purchase: router({
-    list: protectedProcedure.input(z.object({ search: z.string().optional(), category: z.string().optional(), sort: z.enum(["date_desc", "date_asc", "amount_desc", "amount_asc"]).optional() }).optional()).query(async ({ ctx, input }) => {
+    list: protectedProcedure.input(z.object({ search: z.string().optional(), category: z.string().optional(), tag: z.string().optional(), warrantyStatus: z.enum(["all", "active", "expiring soon", "expired"]).optional(), minPrice: z.number().nonnegative().optional(), maxPrice: z.number().nonnegative().optional(), sort: z.enum(["date_desc", "date_asc", "amount_desc", "amount_asc", "warranty_asc", "warranty_desc"]).optional() }).optional()).query(async ({ ctx, input }) => {
       const rows = await listPurchases(ctx.user.id, input ?? {});
       return rows.map(serializePurchase);
     }),
