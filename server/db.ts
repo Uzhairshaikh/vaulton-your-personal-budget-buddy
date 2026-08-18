@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, gt, like, lt, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, lineItems, notifications, purchases, users } from "../drizzle/schema";
+import { InsertUser, lineItems, notifications, purchases, tagBudgets, users, warrantyClaims } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -159,3 +159,86 @@ export { lineItems, notifications, purchases, users };
 export type { InsertUser };
 
 export default { getDb, listPurchases, getPurchase, insertPurchase, updatePurchase, deletePurchase, listNotifications, ensureDeadlineNotifications, getAnalytics };
+
+export const CLAIM_STATUSES = ["Submitted", "Under Review", "Repairing", "Replacement Approved", "Resolved", "Rejected"] as const;
+export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
+
+export async function listTagBudgets(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(tagBudgets).where(eq(tagBudgets.userId, userId)).orderBy(asc(tagBudgets.tagName));
+}
+
+export async function upsertTagBudget(userId: number, tagName: string, monthlyLimit: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const normalizedTag = tagName.trim().slice(0, 100);
+  const normalizedLimit = Number(monthlyLimit.toFixed(2)).toFixed(2);
+  const existing = await db.select({ id: tagBudgets.id }).from(tagBudgets).where(and(eq(tagBudgets.userId, userId), eq(tagBudgets.tagName, normalizedTag))).limit(1);
+  if (existing[0]) {
+    await db.update(tagBudgets).set({ monthlyLimit: normalizedLimit, updatedAt: new Date() }).where(eq(tagBudgets.id, existing[0].id));
+  } else {
+    await db.insert(tagBudgets).values({ userId, tagName: normalizedTag, monthlyLimit: normalizedLimit });
+  }
+  return listTagBudgets(userId);
+}
+
+export async function deleteTagBudget(userId: number, budgetId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(tagBudgets).where(and(eq(tagBudgets.id, budgetId), eq(tagBudgets.userId, userId)));
+  return listTagBudgets(userId);
+}
+
+export function getBudgetStatuses(rows: Array<typeof purchases.$inferSelect>, budgets: Array<typeof tagBudgets.$inferSelect>, now = new Date()) {
+  const spendByTag: Record<string, number> = {};
+  rows.filter(row => {
+    const date = new Date(row.purchaseDate);
+    return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
+  }).forEach(row => {
+    const amount = toNumber(row.totalAmount);
+    const tags = (row.tags || "").split(",").map(tag => tag.trim()).filter(Boolean);
+    const names = tags.length ? tags : ["Untagged"];
+    const allocation = amount / names.length;
+    names.forEach(tag => { spendByTag[tag] = (spendByTag[tag] ?? 0) + allocation; });
+  });
+  return budgets.map(budget => {
+    const spent = Number((spendByTag[budget.tagName] ?? 0).toFixed(2));
+    const limit = toNumber(budget.monthlyLimit);
+    const percentUsed = limit > 0 ? Number(Math.min((spent / limit) * 100, 999).toFixed(1)) : 0;
+    return { ...budget, spent, remaining: Number((limit - spent).toFixed(2)), percentUsed, exceeded: spent > limit };
+  });
+}
+
+export async function listWarrantyClaims(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const claims = await db.select().from(warrantyClaims).where(eq(warrantyClaims.userId, userId)).orderBy(desc(warrantyClaims.updatedAt));
+  if (!claims.length) return [];
+  const purchaseRows = await db.select({ id: purchases.id, merchantName: purchases.merchantName, purchaseDate: purchases.purchaseDate, totalAmount: purchases.totalAmount }).from(purchases).where(eq(purchases.userId, userId));
+  const purchaseMap = new Map(purchaseRows.map(row => [row.id, row]));
+  return claims.map(claim => ({ ...claim, purchase: purchaseMap.get(claim.purchaseId) ?? null }));
+}
+
+export async function createWarrantyClaim(userId: number, input: { purchaseId: number; issueDescription: string; claimReference?: string; status?: ClaimStatus }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const owned = await db.select({ id: purchases.id }).from(purchases).where(and(eq(purchases.id, input.purchaseId), eq(purchases.userId, userId))).limit(1);
+  if (!owned[0]) throw new Error("Purchase not found");
+  await db.insert(warrantyClaims).values({ userId, purchaseId: input.purchaseId, issueDescription: input.issueDescription.trim().slice(0, 10_000), claimReference: input.claimReference?.trim().slice(0, 100) || null, status: input.status ?? "Submitted" });
+  return listWarrantyClaims(userId);
+}
+
+export async function updateWarrantyClaim(userId: number, claimId: number, patch: { status?: ClaimStatus; issueDescription?: string; claimReference?: string; resolutionNotes?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(warrantyClaims).set({ ...patch, updatedAt: new Date() }).where(and(eq(warrantyClaims.id, claimId), eq(warrantyClaims.userId, userId)));
+  return listWarrantyClaims(userId);
+}
+
+export async function deleteWarrantyClaim(userId: number, claimId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(warrantyClaims).where(and(eq(warrantyClaims.id, claimId), eq(warrantyClaims.userId, userId)));
+  return listWarrantyClaims(userId);
+}

@@ -38,6 +38,15 @@ import {
   deletePurchase,
   receiptPath,
   utcCalendarDiff,
+  listTagBudgets,
+  upsertTagBudget,
+  deleteTagBudget,
+  getBudgetStatuses,
+  CLAIM_STATUSES,
+  listWarrantyClaims,
+  createWarrantyClaim,
+  updateWarrantyClaim,
+  deleteWarrantyClaim,
 } from "./db";
 
 const lineItemInput = z.object({
@@ -164,13 +173,14 @@ export const appRouter = router({
       const analytics = getAnalytics(rows);
       const deadlineItems = getDeadlineItems(rows);
       const archiveSummary = rows.map(r => `• ${r.merchantName} (${r.category}): ₹${Number(r.totalAmount).toFixed(2)} on ${new Date(r.purchaseDate).toLocaleDateString()}, Warranty ends: ${r.warrantyExpiryDate ? new Date(r.warrantyExpiryDate).toLocaleDateString() : 'N/A'}, Return ends: ${r.returnDeadlineDate ? new Date(r.returnDeadlineDate).toLocaleDateString() : 'N/A'}, Tags: ${r.tags || 'none'}, Notes: ${r.notes || 'none'}`).join("\n");
-      const systemPrompt = `You are VaultOn AI, an expert personal finance and warranty assistant built into VaultOn (a secure Indian rupee purchase and warranty ledger).
-The user has ${rows.length} purchases totaling ₹${analytics.totalSpend.toFixed(2)} across ${analytics.categories.length} categories.
-Upcoming warranties and return deadlines are tracked automatically.
-Here is the user's complete purchase archive:
-${archiveSummary || "No purchases recorded yet."}
-
-Answer the user's questions accurately, concisely, and helpfully in Indian Rupees (₹). Keep a warm, professional financial assistant tone. If asked about recommendations, budgeting, warranty claims, or return deadlines, provide direct advice grounded in their actual archive data.`;
+	const systemPrompt = `You are VaultOn AI, an expert personal finance, budget, and warranty assistant built into VaultOn (a secure Indian rupee purchase and warranty ledger).
+	The user has ${rows.length} purchases totaling ₹${analytics.totalSpend.toFixed(2)} across ${analytics.categories.length} categories.
+	Upcoming warranties, return deadlines, tag budgets, and warranty claims are tracked automatically.
+	Here is the user's complete purchase archive:
+	${archiveSummary || "No purchases recorded yet."}
+	
+	When asked for proactive money-saving tips, budget analysis, or tag recommendations, analyze their monthly tag distribution and spending patterns to offer 3 concrete, actionable money-saving suggestions in Indian Rupees (₹).
+	Answer the user's questions accurately, concisely, and helpfully in Indian Rupees (₹). Keep a warm, professional financial assistant tone. If asked about recommendations, budgeting, warranty claims, or return deadlines, provide direct advice grounded in their actual archive data.`;
 
       const formattedMessages = [
         { role: "system" as const, content: systemPrompt },
@@ -188,12 +198,42 @@ Answer the user's questions accurately, concisely, and helpfully in Indian Rupee
     }),
   }),
 
+  budget: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const [budgets, rows] = await Promise.all([listTagBudgets(ctx.user.id), getAllPurchases(ctx.user.id)]);
+      const statuses = getBudgetStatuses(rows, budgets);
+      return { budgets: statuses, alerts: statuses.filter(item => item.exceeded) };
+    }),
+    upsert: protectedProcedure.input(z.object({ tagName: z.string().min(1).max(100), monthlyLimit: z.number().positive().max(10_000_000) })).mutation(async ({ ctx, input }) => {
+      const budgets = await upsertTagBudget(ctx.user.id, input.tagName, input.monthlyLimit);
+      const rows = await getAllPurchases(ctx.user.id);
+      const statuses = getBudgetStatuses(rows, budgets);
+      return { budgets: statuses, alerts: statuses.filter(item => item.exceeded) };
+    }),
+    remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const budgets = await deleteTagBudget(ctx.user.id, input.id);
+      const rows = await getAllPurchases(ctx.user.id);
+      const statuses = getBudgetStatuses(rows, budgets);
+      return { budgets: statuses, alerts: statuses.filter(item => item.exceeded) };
+    }),
+  }),
+
+  claims: router({
+    list: protectedProcedure.query(({ ctx }) => listWarrantyClaims(ctx.user.id)),
+    create: protectedProcedure.input(z.object({ purchaseId: z.number().int().positive(), issueDescription: z.string().min(1).max(10000), claimReference: z.string().max(100).optional(), status: z.enum(CLAIM_STATUSES).optional() })).mutation(({ ctx, input }) => createWarrantyClaim(ctx.user.id, input)),
+    update: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(CLAIM_STATUSES).optional(), issueDescription: z.string().min(1).max(10000).optional(), claimReference: z.string().max(100).optional(), resolutionNotes: z.string().max(10000).optional() })).mutation(({ ctx, input }) => { const { id, ...patch } = input; return updateWarrantyClaim(ctx.user.id, id, patch); }),
+    remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => deleteWarrantyClaim(ctx.user.id, input.id)),
+    statuses: protectedProcedure.query(() => CLAIM_STATUSES),
+  }),
+
   dashboard: router({
     summary: protectedProcedure.query(async ({ ctx }) => {
       const rows = await ensureUserDeadlineState(ctx.user.id);
       const analytics = getAnalytics(rows);
       const deadlines = getDeadlineItems(rows).map(item => ({ id: item.purchase.id, merchantName: item.purchase.merchantName, kind: item.kind, date: item.date, ...deadlineStatus(item.date) })).slice(0, 12);
-      return { analytics, deadlines, statuses: DEADLINE_STATUSES, reminderThresholds: [7, 1] as const };
+      const budgets = await listTagBudgets(ctx.user.id);
+      const budgetStatuses = getBudgetStatuses(rows, budgets);
+      return { analytics, deadlines, statuses: DEADLINE_STATUSES, reminderThresholds: [7, 1] as const, budgetAlerts: budgetStatuses.filter(item => item.exceeded), budgets: budgetStatuses };
     }),
     categories: protectedProcedure.query(() => PRODUCT_CATEGORIES),
   }),

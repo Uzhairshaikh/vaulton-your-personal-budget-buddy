@@ -22,6 +22,13 @@
       "when": 1787030886166,
       "tag": "0002_complex_spyke",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787034487280,
+      "tag": "0003_medical_phalanx",
+      "breakpoints": true
     }
   ]
 }

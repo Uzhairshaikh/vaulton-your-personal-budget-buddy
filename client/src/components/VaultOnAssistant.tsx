@@ -14,10 +14,10 @@ const starterMessages: Message[] = [
 ];
 
 const suggestedPrompts = [
+  "Give me proactive money-saving tips based on my spending chart and tags.",
+  "Which tag budgets are close to being exceeded?",
   "Which warranties expire soon?",
   "What can I still return this week?",
-  "Summarize my spending by tag.",
-  "Which purchases have no notes yet?",
 ];
 
 type AssistantMessage = { role: "user" | "assistant"; content: string };

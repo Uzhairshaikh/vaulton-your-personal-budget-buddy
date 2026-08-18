@@ -35,3 +35,9 @@
 - [x] Implement server-side VaultOn AI assistant procedure with user archive context injection.
 - [x] Build the VaultOn AI assistant chat drawer and dashboard floating trigger.
 - [x] Write unit test for assistant context handling and verify in live preview.
+# New Feature Requests
+- [x] Add database tables for tag monthly budgets and warranty claims
+- [x] Implement tRPC procedures for budget threshold management and claim status tracking
+- [x] Build budget alert cards and warranty claim status log in the UI
+- [x] Enhance VaultOn AI assistant with proactive money-saving insights and budget guidance
+- [x] Run migrations, tests, and save checkpoint

@@ -65,3 +65,30 @@ export const notifications = mysqlTable("notifications", {
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+export const tagBudgets = mysqlTable("tag_budgets", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tagName: varchar("tagName", { length: 100 }).notNull(),
+  monthlyLimit: decimal("monthlyLimit", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TagBudget = typeof tagBudgets.$inferSelect;
+export type InsertTagBudget = typeof tagBudgets.$inferInsert;
+
+export const warrantyClaims = mysqlTable("warranty_claims", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  purchaseId: int("purchaseId").notNull(),
+  status: mysqlEnum("status", ["Submitted", "Under Review", "Repairing", "Replacement Approved", "Resolved", "Rejected"]).default("Submitted").notNull(),
+  issueDescription: text("issueDescription").notNull(),
+  claimReference: varchar("claimReference", { length: 100 }),
+  resolutionNotes: text("resolutionNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WarrantyClaim = typeof warrantyClaims.$inferSelect;
+export type InsertWarrantyClaim = typeof warrantyClaims.$inferInsert;
