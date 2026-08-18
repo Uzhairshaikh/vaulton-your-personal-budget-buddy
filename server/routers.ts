@@ -158,6 +158,36 @@ export const appRouter = router({
     }),
   }),
 
+  assistant: router({
+    chat: protectedProcedure.input(z.object({ messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1) })) })).mutation(async ({ ctx, input }) => {
+      const rows = await getAllPurchases(ctx.user.id);
+      const analytics = getAnalytics(rows);
+      const deadlineItems = getDeadlineItems(rows);
+      const archiveSummary = rows.map(r => `• ${r.merchantName} (${r.category}): ₹${Number(r.totalAmount).toFixed(2)} on ${new Date(r.purchaseDate).toLocaleDateString()}, Warranty ends: ${r.warrantyExpiryDate ? new Date(r.warrantyExpiryDate).toLocaleDateString() : 'N/A'}, Return ends: ${r.returnDeadlineDate ? new Date(r.returnDeadlineDate).toLocaleDateString() : 'N/A'}, Tags: ${r.tags || 'none'}, Notes: ${r.notes || 'none'}`).join("\n");
+      const systemPrompt = `You are VaultOn AI, an expert personal finance and warranty assistant built into VaultOn (a secure Indian rupee purchase and warranty ledger).
+The user has ${rows.length} purchases totaling ₹${analytics.totalSpend.toFixed(2)} across ${analytics.categories.length} categories.
+Upcoming warranties and return deadlines are tracked automatically.
+Here is the user's complete purchase archive:
+${archiveSummary || "No purchases recorded yet."}
+
+Answer the user's questions accurately, concisely, and helpfully in Indian Rupees (₹). Keep a warm, professional financial assistant tone. If asked about recommendations, budgeting, warranty claims, or return deadlines, provide direct advice grounded in their actual archive data.`;
+
+      const formattedMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...input.messages.map(m => ({ role: m.role, content: m.content }))
+      ];
+
+      try {
+        const response = await invokeLLM({ messages: formattedMessages, maxTokens: 1200 });
+        const reply = response.choices[0]?.message?.content || "I am here to help you manage your purchases and warranties!";
+        return { reply };
+      } catch (err: any) {
+        console.error("[VaultOn AI] Error invoking LLM:", err);
+        return { reply: "I'm having trouble connecting to VaultOn AI right now. Please try again in a moment." };
+      }
+    }),
+  }),
+
   dashboard: router({
     summary: protectedProcedure.query(async ({ ctx }) => {
       const rows = await ensureUserDeadlineState(ctx.user.id);
@@ -192,4 +222,4 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter;
 export const receiptExtractionContract = { fields: getRequiredExtractionFields(), statuses: DEADLINE_STATUSES, reminderDays: [7, 1] as const, storage: "S3-compatible" as const };
 export const receiptParserDefaults = { warrantyDurationMonths: 12, returnWindowDays: 30, currency: "INR" };
-export function getRouterDiagnostics() { return { ready: true, extraction: receiptExtractionContract, defaults: receiptParserDefaults, helpers: { addDays, addMonths, deadlineStatus, formatDate, formatMoney, utcCalendarDiff } }; }
+export function getRouterDiagnostics() { return { ready: true, extraction: receiptExtractionContract, defaults: receiptParserDefaults, assistant: { contextFields: ["purchases", "warranties", "returns", "tags", "notes", "spending"] as const, currency: "INR" as const, protected: true as const }, helpers: { addDays, addMonths, deadlineStatus, formatDate, formatMoney, utcCalendarDiff } }; }

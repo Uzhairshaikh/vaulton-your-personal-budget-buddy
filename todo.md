@@ -32,3 +32,6 @@
 - [x] Validate the uploader success and error row presentation before final checkpoint.
 - [x] Visually verify a queued uploader row alongside a processing row with distinct progress bars in the live preview.
 - [x] Keep explicit verification coverage for complete and error uploader rows.
+- [x] Implement server-side VaultOn AI assistant procedure with user archive context injection.
+- [x] Build the VaultOn AI assistant chat drawer and dashboard floating trigger.
+- [x] Write unit test for assistant context handling and verify in live preview.

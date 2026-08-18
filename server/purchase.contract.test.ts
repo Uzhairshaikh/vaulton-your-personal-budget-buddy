@@ -50,3 +50,13 @@ describe("receipt and deadline contracts", () => {
     expect(result.tags).toBe("family, tax");
     expect(result.totalAmount).toBe("1299.50");
   });
+
+
+describe("VaultOn assistant contract", () => {
+  it("is protected and receives the archive context needed for useful answers", () => {
+    const assistant = getRouterDiagnostics().assistant;
+    expect(assistant.protected).toBe(true);
+    expect(assistant.currency).toBe("INR");
+    expect(assistant.contextFields).toEqual(["purchases", "warranties", "returns", "tags", "notes", "spending"]);
+  });
+});
