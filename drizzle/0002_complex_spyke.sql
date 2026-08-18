@@ -1,0 +1,1 @@
+ALTER TABLE `purchases` ADD `tags` varchar(255) DEFAULT '' NOT NULL;

@@ -17,3 +17,10 @@
 - [x] Write Vitest unit tests for backend routers and AI extraction parsing
 - [x] Verify UI interactions, responsive design, and save final checkpoint
 - [x] Fix route registration so purchases, warranties, returns, insights, and purchase detail pages render the Receiptwise shell instead of the generic 404 page.
+# VaultOn Enhancements
+- [x] Add CSV export for purchase and warranty records
+- [x] Add custom tags and note editing for each purchase
+- [x] Add visual loading animations and toast notifications for AI receipt uploads
+- [x] Rename branding from Receiptwise to VaultOn
+- [x] Switch global font family to Arial across the entire UI
+- [x] Update currency formatting from USD ($) to Indian Rupees (₹)

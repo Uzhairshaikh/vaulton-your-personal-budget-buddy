@@ -15,6 +15,13 @@
       "when": 1787028392968,
       "tag": "0001_thin_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787030886166,
+      "tag": "0002_complex_spyke",
+      "breakpoints": true
     }
   ]
 }

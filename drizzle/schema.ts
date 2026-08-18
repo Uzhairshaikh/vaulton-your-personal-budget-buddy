@@ -30,6 +30,7 @@ export const purchases = mysqlTable("purchases", {
   returnWindowDays: int("returnWindowDays").default(30).notNull(),
   returnDeadlineDate: timestamp("returnDeadlineDate"),
   notes: text("notes"),
+  tags: varchar("tags", { length: 255 }).default("").notNull(),
   rawExtractedData: json("rawExtractedData"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

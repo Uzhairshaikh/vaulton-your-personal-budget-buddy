@@ -51,11 +51,12 @@ const basePurchaseInput = z.object({
   merchantName: z.string().min(1).max(255),
   purchaseDate: z.coerce.date(),
   totalAmount: z.number().nonnegative(),
-  currency: z.string().min(3).max(10).default("USD"),
+  currency: z.string().min(3).max(10).default("INR"),
   category: z.enum(PRODUCT_CATEGORIES).default("Other"),
   warrantyDurationMonths: z.number().int().min(0).max(240).default(12),
   returnWindowDays: z.number().int().min(0).max(365).default(30),
   notes: z.string().max(10000).optional(),
+  tags: z.string().max(255).optional(),
   lineItems: z.array(lineItemInput).default([]),
 });
 
@@ -150,7 +151,7 @@ export const appRouter = router({
       const merchantName = String(extracted.merchantName || "Unknown merchant").trim();
       const warrantyDurationMonths = Math.max(0, Number(extracted.warrantyDurationMonths ?? 12));
       const returnWindowDays = Math.max(0, Number(extracted.returnWindowDays ?? 30));
-      const purchase = normalizePurchaseInput({ merchantName, purchaseDate, totalAmount: Number(extracted.totalAmount ?? 0), currency: String(extracted.currency || "USD"), category: PRODUCT_CATEGORIES.includes(extracted.category) ? extracted.category : "Other", warrantyDurationMonths, returnWindowDays, notes: String(extracted.notes || "") });
+      const purchase = normalizePurchaseInput({ merchantName, purchaseDate, totalAmount: Number(extracted.totalAmount ?? 0), currency: "INR", category: PRODUCT_CATEGORIES.includes(extracted.category) ? extracted.category : "Other", warrantyDurationMonths, returnWindowDays, notes: String(extracted.notes || "") });
       const created = await insertPurchase(ctx.user.id, { ...purchase, receiptUrl: upload.url, receiptFileKey: upload.key, rawExtractedData: extracted }, normalizeLineItems(Array.isArray(extracted.lineItems) ? extracted.lineItems.map((item: Record<string, unknown>) => ({ itemName: String(item.itemName || "Item"), quantity: Number(item.quantity || 1), price: Number(item.price || 0), category: item.category ? String(item.category) : undefined })) : []));
       if (!created) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The parsed purchase could not be saved." });
       return { ...serializePurchase(created), lineItems: created.lineItems.map(item => ({ ...item, price: Number(item.price) })), extracted, receiptUrl: upload.url, requiredFields: getRequiredExtractionFields(), message: "Receipt parsed and purchase saved." };
@@ -190,5 +191,5 @@ export const appRouter = router({
 
 export type AppRouter = typeof appRouter;
 export const receiptExtractionContract = { fields: getRequiredExtractionFields(), statuses: DEADLINE_STATUSES, reminderDays: [7, 1] as const, storage: "S3-compatible" as const };
-export const receiptParserDefaults = { warrantyDurationMonths: 12, returnWindowDays: 30, currency: "USD" };
+export const receiptParserDefaults = { warrantyDurationMonths: 12, returnWindowDays: 30, currency: "INR" };
 export function getRouterDiagnostics() { return { ready: true, extraction: receiptExtractionContract, defaults: receiptParserDefaults, helpers: { addDays, addMonths, deadlineStatus, formatDate, formatMoney, utcCalendarDiff } }; }
